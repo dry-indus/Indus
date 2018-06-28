@@ -6,61 +6,68 @@
 #include <typeinfo>
 #include <QDebug>
 
+#define CAST \
+    virtual auto cast()->decltype(this) { \
+    return this; \
+    }
+
 #define CLONE \
+    virtual Inner *clone() const{ \
+    auto &local = *this; \
+    typedef std::remove_const<std::remove_reference<decltype(local)>::type>::type CurrentClass; \
+    return new CurrentClass(*this); \
+    }
+
+#define INNER \
     public: \
-    virtual AbstructData *clone() const { \
-    auto local = *this; \
-    using CurrentClass = decltype(local); \
-    CurrentClass *cc = new CurrentClass(); \
-    *cc = local; \
-    return cc; \
-    }
-
-struct AbstructData
-{
+    CAST \
     CLONE
-    public:
-        AbstructData &operator=(const AbstructData &other) {
-        return *this;
-    }
 
-    template <typename T>
-    const T &castData() const
-    {
-        try {
-            dynamic_cast<const T &>(*this);
-        } catch(const std::bad_cast &bc) {
-            QString errorInfo = QString("%1 dynamic_cast %2 is %3")
-                    .arg(typeid(*this).name()).arg(typeid(T).name()).arg(bc.what());
-            qFatal(errorInfo.toStdString().c_str());
-        }
-        return dynamic_cast<const T &>(*this);;
-    }
+struct Inner
+{
+    INNER
+    public:
+    virtual ~Inner() { qDebug() << "~Inner()"; }
+
+    inline bool isVaild() const { return m_isVaild; }
+
+    /*!
+     * \brief destory 销毁
+     */
+    virtual void destory() { m_isVaild  = false; }
 
 protected:
-    AbstructData() {}
-    AbstructData(const AbstructData &) {}
+    Inner() : m_isVaild(true) {}
 
-    friend class Node;
+    Inner(const Inner &other)
+        : m_isVaild(other.isVaild()){}
+
+private:
+    struct Invaild {};
+
+    Inner(Invaild) : m_isVaild(false) {}
+
+    bool m_isVaild;
+
+    friend class OutCaseBase;
 };
 
-class TestNodeData : public AbstructData
+class TestNodeData : public Inner
 {
-public:
-    TestNodeData &operator=(const TestNodeData &other)
+    INNER
+    public:
+        TestNodeData &operator=(const TestNodeData &other)
     {
         a = other.a;
         return *this;
     }
 
     QString a = "A";
-
-    CLONE
 };
 
-class StationNodeData : public AbstructData
+class StationNodeData : public Inner
 {
-    CLONE
+    INNER
     public:
         StationNodeData &operator=(const StationNodeData& other)
     {
@@ -71,38 +78,61 @@ class StationNodeData : public AbstructData
     int a;
 };
 
-class Node
+class OutCaseBase
 {
-    typedef QSharedPointer<AbstructData> NodeDataPtr;
+    typedef QSharedPointer<Inner> NodeDataPtr;
+    typedef Inner::Invaild InvaildData;
 
 public:
-    Node()
-        : m_dataPtr(new AbstructData()) {}
+    explicit OutCaseBase() : m_dataPtr(new Inner(InvaildData())) {}
 
-    Node(const Node *other)
-        : m_dataPtr(other->m_dataPtr) { }
+    OutCaseBase(const OutCaseBase &other) : m_dataPtr(other.m_dataPtr->clone()) {}
 
-    void setData(const AbstructData &data)
+    OutCaseBase(OutCaseBase &&other) : m_dataPtr(new Inner(InvaildData())) {
+        // 窃取 other 的 InnerTank
+        m_dataPtr.swap(other.m_dataPtr);
+    }
+
+    inline void setData(const Inner &data)
     {
         NodeDataPtr cloneData(data.clone());
         Q_ASSERT(cloneData);
         m_dataPtr.swap(cloneData);
     }
 
-    const AbstructData &data() const
+    inline void setData(Inner &&data)
     {
-        Q_ASSERT(m_dataPtr);
-        return *m_dataPtr;
+        setData(static_cast<const Inner &>(data)); // 使用static_cast得到data的左值引用
+        data.destory(); // 销毁data 以完成窃取
     }
 
-    void clear()
+    template<typename T>
+    inline const T &inner() const
+    {
+        Q_ASSERT(m_dataPtr);
+        auto d = m_dataPtr->cast();
+        Q_ASSERT(d);
+        Q_ASSERT(typeid(T) == typeid(*d));
+        return *static_cast<const T *>(d); // static_cast仅为指针添加const
+    }
+
+    template<typename T>
+    T innerPtr() const
+    {
+        Q_ASSERT(m_dataPtr);
+        auto d = m_dataPtr->cast();
+        Q_ASSERT(d);
+        return dynamic_cast<T const>(d);
+    }
+
+    inline void clear()
     {
         NodeDataPtr temp;
         m_dataPtr.swap(temp);
     }
 
 private:
-    NodeDataPtr m_dataPtr;
+    NodeDataPtr m_dataPtr; // share指针, 管理Inner
 };
 
 #endif // NODE_H
