@@ -1,0 +1,45 @@
+/* sqlite */
+create table Test1
+(
+    data                            int             not NULL
+);
+
+create table Test2
+(
+    num                             integer         primary key autoincrement,
+ 
+    data1                           int             not NULL,
+    data2                           text            not NULL
+);
+
+
+/* mysql */
+create table Test1
+(
+    data                            int             not NULL
+);
+
+create table Test22
+(
+    num                             bigint          not NULL AUTO_INCREMENT,
+ 
+    data1                           int             not NULL,
+    data2                           text            not NULL,
+ 
+    PRIMARY KEY(Num)
+);
+
+/* sqlserver */
+create table Test1
+(
+    data                            int             not NULL
+);
+
+create table Test2
+(
+    num                             bigint          not NULL primary key,
+ 
+    data1                           int             not NULL,
+    data2                           text            not NULL,
+);
+ 
