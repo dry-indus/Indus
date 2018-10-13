@@ -180,11 +180,10 @@ bool ConnectNode::open(void)
     if(m_mutex){ m_mutex->lock(); }
 
     emit startConnectionTiming();
-    const auto &&Flag = m_database->open();
+    const bool flag = m_database->open();
 
     if(m_mutex){ m_mutex->unlock(); }
-
-    return Flag;
+    return flag;
 }
 
 void ConnectNode::close(void)
@@ -262,10 +261,7 @@ void Control::destroyAllConnection(void)
 {
     m_mutex.lock();
 
-    for(auto *now : m_node)
-    {
-        delete now;
-    }
+    qDeleteAll(m_node) ;
     m_node.clear();
 
     m_mutex.unlock();
