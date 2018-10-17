@@ -6,133 +6,157 @@
 #include <typeinfo>
 #include <QDebug>
 
-#define CAST \
-    virtual auto cast()->decltype(this) { \
-    return this; \
-    }
-
-#define CLONE \
-    virtual Inner *clone() const{ \
-    auto &local = *this; \
-    typedef std::remove_const<std::remove_reference<decltype(local)>::type>::type CurrentClass; \
-    return new CurrentClass(*this); \
-    }
-
-#define INNER \
+#define CLONE(class_name) \
     public: \
-    CAST \
-    CLONE
+    typedef class_name type; \
+    QSharedPointer<type> clone() const { \
+    return QSharedPointer<type>(new type(*this)); \
+    }
 
-struct Inner
+class NodePrivate;
+typedef QSharedPointer<NodePrivate> NodePrivatePtr;
+typedef QMap<QString, QVariant> PorpertyMap;
+
+class NodePrivate
 {
-    INNER
-    public:
-    virtual ~Inner() { qDebug() << "~Inner()"; }
-
-    inline bool isVaild() const { return m_isVaild; }
-
-    /*!
-     * \brief destory 销毁
-     */
-    virtual void destory() { m_isVaild  = false; }
-
-protected:
-    Inner() : m_isVaild(true) {}
-
-    Inner(const Inner &other)
-        : m_isVaild(other.isVaild()){}
-
-private:
-    struct Invaild {};
-
-    Inner(Invaild) : m_isVaild(false) {}
-
+    CLONE(NodePrivate)
+    private:
+        QString m_typeName;
+    NodePrivatePtr m_parent;
+    QSet<NodePrivatePtr> childs;
+    PorpertyMap m_porpertyMap;
     bool m_isVaild;
 
-    friend class OutCaseBase;
-};
+private:
+    explicit NodePrivate(const QString &typeName, const NodePrivatePtr &parent) :
+        m_typeName(typeName),
+        m_isVaild(true),
+        m_parent(parent) {}
 
-class TestNodeData : public Inner
-{
-    INNER
-    public:
-        TestNodeData &operator=(const TestNodeData &other)
-    {
-        a = other.a;
-        return *this;
-    }
+    NodePrivate(const NodePrivate &other) :
+        m_typeName(other.m_typeName),
+        m_parent(other.m_parent),
+        m_porpertyMap(other.m_porpertyMap),
+        m_isVaild(other.m_isVaild()) {}
 
-    QString a = "A";
-};
+    NodePrivate(const NodePrivatePtr &other) :
+        NodePrivate(*other) {}
 
-class StationNodeData : public Inner
-{
-    INNER
-    public:
-        StationNodeData &operator=(const StationNodeData& other)
-    {
-        a = other.a;
-        return *this;
-    }
+    inline bool isVaild() const
+    { return m_isVaild; }
 
-    int a;
-};
+    /*!
+     * \brief repeal 废除
+     */
+    void repeal()
+    { m_isVaild  = false; }
 
-class OutCaseBase
-{
-    typedef QSharedPointer<Inner> NodeDataPtr;
-    typedef Inner::Invaild InvaildData;
+    inline setParent(const NodePrivatePtr &parent)
+    { m_parent = parent; }
+
+    void insetChild(const NodePrivatePtr &child)
+    { childs.insert(child); }
+
+    void take(const NodePrivatePtr &child)
+    { childs.remove(child); }
 
 public:
-    explicit OutCaseBase() : m_dataPtr(new Inner(InvaildData())) {}
+    virtual ~NodePrivate()
+    { qDebug() << "~NodePrivate()"; }
 
-    OutCaseBase(const OutCaseBase &other) : m_dataPtr(other.m_dataPtr->clone()) {}
+    friend class Node;
+};
 
-    OutCaseBase(OutCaseBase &&other) : m_dataPtr(new Inner(InvaildData())) {
-        // 窃取 other 的 InnerTank
-        m_dataPtr.swap(other.m_dataPtr);
+class Node;
+typedef QList<Node> NodeList;
+
+/*!
+ * \brief The Node class
+ */
+class Node
+{
+    CLONE(Node)
+
+    private:
+        NodePrivatePtr m_p; // share指针, 管理私有指针
+
+public:
+    explicit Node(const QString &uid, const QString &typeName, const Node &parent) :
+        m_p(new NodePrivate(typeName, parent.m_p))
+    {
+        setProperty("uid", uid);
     }
 
-    inline void setData(const Inner &data)
+    Node(const Node &other) : m_p(other.m_p->clone()) {}
+
+    Node(Node &&other)
     {
-        NodeDataPtr cloneData(data.clone());
-        Q_ASSERT(cloneData);
-        m_dataPtr.swap(cloneData);
+        m_p.swap(other.m_p); // 窃取 other 的私有指针
     }
 
-    inline void setData(Inner &&data)
+    inline QString typeName() const
     {
-        setData(static_cast<const Inner &>(data)); // 使用static_cast得到data的左值引用
-        data.destory(); // 销毁data 以完成窃取
+        Q_ASSERT(m_p);
+        return m_p->m_typeName;
     }
 
-    template<typename T>
-    inline const T &inner() const
+    inline void setProperty(const QString &propertyName, const QVariant &variant) const
     {
-        Q_ASSERT(m_dataPtr);
-        auto d = m_dataPtr->cast();
-        Q_ASSERT(d);
-        Q_ASSERT(typeid(T) == typeid(*d));
-        return *static_cast<const T *>(d); // static_cast仅为指针添加const
+        Q_ASSERT(m_p);
+        if (m_p->isVaild()) {
+            m_p->m_porpertyMap.insert(propertyName, variant);
+        }
     }
 
-    template<typename T>
-    T innerPtr() const
+    inline PorpertyMap::iterator property(const QString &propertyName) const
     {
-        Q_ASSERT(m_dataPtr);
-        auto d = m_dataPtr->cast();
-        Q_ASSERT(d);
-        return dynamic_cast<T const>(d);
+        Q_ASSERT(m_p);
+        if (m_p->isVaild()) {
+            m_p->m_porpertyMap.find(propertyName);
+        } else {
+            m_p->m_porpertyMap.end();
+        }
     }
 
     inline void clear()
     {
-        NodeDataPtr temp;
-        m_dataPtr.swap(temp);
+        Q_ASSERT(m_p);
+        NodePrivatePtr temp;
+        m_p.swap(temp);
+        m_p->m_isVaild = temp->m_isVaild;
     }
 
-private:
-    NodeDataPtr m_dataPtr; // share指针, 管理Inner
+    /*!
+     * \brief repeal 废除
+     */
+    inline void repeal() const
+    {
+        Q_ASSERT(m_p);
+        m_p->repeal();
+    }
+
+    inline NodeList childs() const
+    {
+        Q_ASSERT(m_p);
+        m_p->childs.toList();
+    }
+
+    inline QStringList propertyNameList() const
+    {
+        Q_ASSERT(m_p);
+        return m_p->m_porpertyMap.keys();
+    }
+
+    inline QStringList childTypeNameList() const
+    {
+        Q_ASSERT(m_p);
+        QStringList list;
+        foreach (const auto &child, m_p->childs) {
+            list << child->typeName();
+        }
+        return list;
+    }
+
 };
 
 #endif // NODE_H

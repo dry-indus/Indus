@@ -83,7 +83,7 @@ private:
 class Query
 {
 private:
-    QSqlQuery *m_query;
+    QSharedPointer<QSqlQuery> m_query;
     QSharedPointer<QMutex> m_mutex;
     QSharedPointer<QSqlDatabase> m_database;
 
@@ -97,18 +97,14 @@ public:
 
     ~Query(void);
 
-    inline QSqlQuery *operator->(void) { return m_query; }
+    inline QSharedPointer<QSqlQuery> operator->(void) { return m_query; }
 
-    inline QSqlQuery *operator*(void) { return m_query; }
+    inline QSqlQuery &operator*(void) { return *m_query; }
 
     void swap(Query &other);
 
 private:
     Query(QSharedPointer<QSqlDatabase> dataBase, QSharedPointer<QMutex> mutex);
-
-    void swapQuery(Query &other);
-
-    void swapMutex(Query &other);
 
     friend class Query;
     friend class ConnectNode;
@@ -187,6 +183,7 @@ public:
     Control(const DatabaseSettings &databaseSettings, const ConnectSettings &connectSettings = ConnectSettings());
 
     Control(const Control &) = delete;
+
     Control(Control &&) = delete;
 
     ~Control(void);

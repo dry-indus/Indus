@@ -35,7 +35,7 @@ ConnectSettings::ConnectSettings(const int &maxOpenTime, const QueryMode &queryM
 
 // Query
 Query::Query(QSharedPointer<QSqlDatabase> dataBase, QSharedPointer<QMutex> mutex):
-    m_query(new QSqlQuery(*dataBase)),
+    m_query(QSharedPointer<QSqlQuery>(new QSqlQuery(*dataBase))),
     m_mutex(mutex),
     m_database(dataBase)
 {
@@ -49,10 +49,6 @@ Query::Query(Query &&other)
 
 Query::~Query(void)
 {
-    if(m_query)
-    {
-        delete m_query;
-    }
     if(m_mutex)
     {
         m_mutex->unlock();
@@ -61,19 +57,7 @@ Query::~Query(void)
 
 void Query::swap(Query &other)
 {
-    swapQuery(other);
-    swapMutex(other);
-}
-
-void Query::swapQuery(Query &other)
-{
-    auto *tempQuery = m_query;
-    m_query = other.m_query;
-    other.m_query = tempQuery;
-}
-
-void Query::swapMutex(Query &other)
-{
+    m_query.swap(other.m_query);
     m_mutex.swap(other.m_mutex);
 }
 
@@ -110,13 +94,11 @@ ConnectNode::~ConnectNode(void)
 
 Query ConnectNode::query(void)
 {
-    if(!m_database)
-    {
+    if(!m_database) {
         createDataBase();
     }
 
-    if(!m_database->isOpen())
-    {
+    if(!m_database->isOpen()) {
         m_database->open();
     }
 
